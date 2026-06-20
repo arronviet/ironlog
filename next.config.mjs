@@ -1,13 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   eslint: {
-    // Bỏ qua lỗi eslint khi build
+    // Ép Vercel bỏ qua mọi cảnh báo lỗi cú pháp eslint khi đang build
     ignoreDuringBuilds: true,
   },
   typescript: {
-    // Bỏ qua lỗi kiểu dữ liệu nghiêm ngặt khi build
+    // Ép Vercel bỏ qua mọi lỗi kiểm tra kiểu dữ liệu TypeScript khi đang build
     ignoreBuildErrors: true,
   },
 };
 
-export default nextConfig; 
+export default nextConfig;
