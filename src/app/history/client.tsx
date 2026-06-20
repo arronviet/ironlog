@@ -72,10 +72,10 @@ export function HistoryClient({ workouts }: Props) {
           {Object.entries(grouped).map(([month, monthWorkouts]) => (
             <div key={month}>
               <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-                {month} · {monthWorkouts.length} sessions
+               {month} · {(monthWorkouts as any[]).length} sessions
               </h2>
               <div className="space-y-2">
-                {monthWorkouts.map((workout) => {
+                {(monthWorkouts as any[]).map((workout) => {
                   const totalVolume =
                     workout.exercises?.reduce(
                       (acc: number, ex: any) =>
