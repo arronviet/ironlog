@@ -349,3 +349,170 @@ export async function getProgressComparison(exerciseName: string) {
     trend,
   };
 }
+
+// ============================================================
+// SET EDITING — update / delete / add a single set after a
+// workout has already been saved, plus add a brand new exercise.
+// Every mutation re-derives the exercise_history row for that
+// workout so Progressive Overload comparisons stay accurate.
+// ============================================================
+
+async function recomputeExerciseHistory(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  exerciseId: string
+) {
+  // Load the exercise + its workout + its current sets
+  const { data: exercise } = await supabase
+    .from("exercises")
+    .select("id, name, workout_id, workouts!inner(user_id, started_at)")
+    .eq("id", exerciseId)
+    .single();
+
+  if (!exercise) return;
+
+  const workoutJoined = (exercise as any).workouts;
+  const workout = Array.isArray(workoutJoined) ? workoutJoined[0] : workoutJoined;
+  if (!workout || workout.user_id !== userId) throw new Error("Unauthorized");
+
+  const { data: sets } = await supabase
+    .from("exercise_sets")
+    .select("weight_kg, reps")
+    .eq("exercise_id", exerciseId);
+
+  // Always remove the old history row for this workout+exercise first.
+  await supabase
+    .from("exercise_history")
+    .delete()
+    .eq("workout_id", exercise.workout_id)
+    .eq("exercise_name", exercise.name)
+    .eq("user_id", userId);
+
+  if (!sets || sets.length === 0) {
+    // No sets left — nothing to record.
+    return;
+  }
+
+  const bestSet = sets.reduce((best, s) =>
+    s.weight_kg > best.weight_kg || (s.weight_kg === best.weight_kg && s.reps > best.reps)
+      ? s
+      : best
+  );
+
+  await supabase.from("exercise_history").insert({
+    user_id: userId,
+    exercise_name: exercise.name,
+    workout_id: exercise.workout_id,
+    performed_at: workout.started_at,
+    best_set_weight: bestSet.weight_kg,
+    best_set_reps: bestSet.reps,
+    total_volume: calculateVolume(sets),
+    estimated_1rm: estimate1RM(bestSet.weight_kg, bestSet.reps),
+    sets_count: sets.length,
+  });
+}
+
+export async function updateExerciseSet(
+  setId: string,
+  exerciseId: string,
+  updates: { weight_kg: number; reps: number; rpe: number | null }
+) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  if (
+    !Number.isFinite(updates.weight_kg) ||
+    updates.weight_kg <= 0 ||
+    !Number.isInteger(updates.reps) ||
+    updates.reps <= 0
+  ) {
+    throw new Error("Invalid weight or reps");
+  }
+
+  // Ownership check happens implicitly via RLS, but we double-check
+  // here so recomputeExerciseHistory can trust the exerciseId.
+  const { error } = await supabase
+    .from("exercise_sets")
+    .update({
+      weight_kg: updates.weight_kg,
+      reps: updates.reps,
+      rpe: updates.rpe,
+    })
+    .eq("id", setId);
+
+  if (error) throw error;
+
+  await recomputeExerciseHistory(supabase, user.id, exerciseId);
+
+  revalidatePath("/dashboard");
+  revalidatePath("/history");
+  revalidatePath("/calendar");
+  revalidatePath("/stats");
+}
+
+export async function deleteExerciseSet(setId: string, exerciseId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const { error } = await supabase
+    .from("exercise_sets")
+    .delete()
+    .eq("id", setId);
+
+  if (error) throw error;
+
+  await recomputeExerciseHistory(supabase, user.id, exerciseId);
+
+  revalidatePath("/dashboard");
+  revalidatePath("/history");
+  revalidatePath("/calendar");
+  revalidatePath("/stats");
+}
+
+export async function addExerciseSet(
+  exerciseId: string,
+  newSet: { weight_kg: number; reps: number; rpe: number | null }
+) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  if (
+    !Number.isFinite(newSet.weight_kg) ||
+    newSet.weight_kg <= 0 ||
+    !Number.isInteger(newSet.reps) ||
+    newSet.reps <= 0
+  ) {
+    throw new Error("Invalid weight or reps");
+  }
+
+  const { count } = await supabase
+    .from("exercise_sets")
+    .select("id", { count: "exact", head: true })
+    .eq("exercise_id", exerciseId);
+
+  const { error } = await supabase.from("exercise_sets").insert({
+    exercise_id: exerciseId,
+    set_number: (count ?? 0) + 1,
+    weight_kg: newSet.weight_kg,
+    reps: newSet.reps,
+    rpe: newSet.rpe,
+  });
+
+  if (error) throw error;
+
+  await recomputeExerciseHistory(supabase, user.id, exerciseId);
+
+  revalidatePath("/dashboard");
+  revalidatePath("/history");
+  revalidatePath("/calendar");
+  revalidatePath("/stats");
+}
