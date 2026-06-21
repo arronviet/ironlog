@@ -13,15 +13,16 @@ import {
 } from "recharts";
 import { format, subDays, eachDayOfInterval, isSameDay } from "date-fns";
 import { formatVolume, getStreakEmoji } from "@/lib/utils";
-import type { UserStats } from "@/types";
+import type { UserStats, PersonalRecord } from "@/types";
 import { Flame, Dumbbell, TrendingUp, Trophy, Calendar, Weight } from "lucide-react";
 
 interface Props {
   stats: UserStats | null;
   workouts: any[];
+  personalRecords: PersonalRecord[];
 }
 
-export function StatsClient({ stats, workouts }: Props) {
+export function StatsClient({ stats, workouts, personalRecords }: Props) {
   // Build last 12 weeks volume data
   const volumeData = buildWeeklyVolumeData(workouts);
 
@@ -77,6 +78,42 @@ export function StatsClient({ stats, workouts }: Props) {
           />
         )}
       </div>
+
+      {/* Personal records */}
+      {personalRecords.length > 0 && (
+        <div className="bg-card border border-border rounded-lg p-4 mb-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Trophy className="w-4 h-4 text-yellow-400" />
+            <h2 className="text-sm font-medium text-foreground">
+              Personal records
+            </h2>
+            <span className="text-xs text-muted-foreground ml-auto">
+              {personalRecords.length} lifts
+            </span>
+          </div>
+          <div className="space-y-1">
+            {personalRecords.map((pr) => (
+              <div
+                key={pr.id}
+                className="flex items-center gap-3 py-2 px-2 -mx-2 rounded hover:bg-accent/30 transition-colors"
+              >
+                <span className="text-sm font-medium text-foreground flex-1 min-w-0 truncate">
+                  {pr.exercise_name}
+                </span>
+                <span className="text-sm text-foreground tabular-nums">
+                  {pr.weight_kg}kg × {pr.reps}
+                </span>
+                <span className="text-xs text-muted-foreground tabular-nums w-20 text-right shrink-0">
+                  {pr.estimated_1rm}kg e1RM
+                </span>
+                <span className="text-[11px] text-muted-foreground w-16 text-right shrink-0">
+                  {format(new Date(pr.achieved_at), "MMM d")}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Weekly volume chart */}
       {volumeData.length > 0 && (

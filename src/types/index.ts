@@ -66,6 +66,19 @@ export interface ExerciseHistory {
   sets_count: number;
 }
 
+export interface PersonalRecord {
+  id: string;
+  user_id: string;
+  exercise_name: string;
+  set_id: string | null;
+  workout_id: string;
+  weight_kg: number;
+  reps: number;
+  estimated_1rm: number;
+  achieved_at: string;
+  created_at: string;
+}
+
 export interface ProgressComparison {
   exercise_name: string;
   current: {

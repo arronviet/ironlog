@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import {
@@ -10,7 +10,9 @@ import {
   formatVolume,
   calculateVolume,
 } from "@/lib/utils";
-import { Search, Dumbbell } from "lucide-react";
+import { deleteWorkout } from "@/lib/actions/workouts";
+import { useWorkoutStore } from "@/lib/store/workout";
+import { Search, Dumbbell, Trash2, Check, X } from "lucide-react";
 
 interface Props {
   workouts: any[];
@@ -18,6 +20,9 @@ interface Props {
 
 export function HistoryClient({ workouts }: Props) {
   const [search, setSearch] = useState("");
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const addToast = useWorkoutStore((s) => s.addToast);
 
   const filtered = workouts.filter(
     (w) =>
@@ -29,15 +34,24 @@ export function HistoryClient({ workouts }: Props) {
   );
 
   // Group by month
-  const grouped = filtered.reduce(
-    (acc, workout) => {
-      const month = format(new Date(workout.started_at), "MMMM yyyy");
-      if (!acc[month]) acc[month] = [];
-      acc[month].push(workout);
-      return acc;
-    },
-    {} as Record<string, any[]>
-  );
+  const grouped = filtered.reduce<Record<string, any[]>>((acc, workout) => {
+    const month = format(new Date(workout.started_at), "MMMM yyyy");
+    if (!acc[month]) acc[month] = [];
+    acc[month].push(workout);
+    return acc;
+  }, {});
+
+  const handleDelete = (id: string, name: string) => {
+    startTransition(async () => {
+      try {
+        await deleteWorkout(id);
+        setConfirmingId(null);
+        addToast({ title: `Deleted "${name}"`, variant: "default" });
+      } catch {
+        addToast({ title: "Failed to delete workout", variant: "destructive" });
+      }
+    });
+  };
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-8">
@@ -72,10 +86,10 @@ export function HistoryClient({ workouts }: Props) {
           {Object.entries(grouped).map(([month, monthWorkouts]) => (
             <div key={month}>
               <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-               {month} · {(monthWorkouts as any[]).length} sessions
+                {month} · {monthWorkouts.length} sessions
               </h2>
               <div className="space-y-2">
-                {(monthWorkouts as any[]).map((workout) => {
+                {monthWorkouts.map((workout) => {
                   const totalVolume =
                     workout.exercises?.reduce(
                       (acc: number, ex: any) =>
@@ -98,44 +112,94 @@ export function HistoryClient({ workouts }: Props) {
                       ? ` +${workout.exercises.length - 3}`
                       : "");
 
+                  const isConfirming = confirmingId === workout.id;
+
                   return (
-                    <Link
+                    <div
                       key={workout.id}
-                      href={`/workout/${workout.id}`}
-                      className="flex items-center gap-4 bg-card border border-border rounded-lg px-4 py-3 hover:bg-accent/30 hover:border-border/80 transition-colors"
+                      className={`flex items-center gap-4 bg-card border rounded-lg px-4 py-3 transition-colors ${
+                        isConfirming
+                          ? "border-destructive/40 bg-destructive/5"
+                          : "border-border hover:bg-accent/30 hover:border-border/80"
+                      }`}
                     >
-                      <div className="text-center shrink-0 w-10">
-                        <div className="text-sm font-semibold text-foreground tabular-nums">
-                          {format(new Date(workout.started_at), "d")}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground uppercase">
-                          {format(new Date(workout.started_at), "EEE")}
-                        </div>
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span
-                            className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${getWorkoutTypeBadgeClass(workout.workout_type)}`}
+                      {isConfirming ? (
+                        <>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground">
+                              Delete &ldquo;{workout.name}&rdquo;?
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              This can&apos;t be undone — all sets and notes will be lost.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(workout.id, workout.name)}
+                            disabled={isPending}
+                            className="flex items-center gap-1.5 bg-destructive text-destructive-foreground text-xs font-medium px-3 py-1.5 rounded-md hover:bg-destructive/90 disabled:opacity-50 transition-colors shrink-0"
                           >
-                            {getWorkoutTypeLabel(workout.workout_type)}
-                          </span>
-                          <span className="text-sm font-medium text-foreground truncate">
-                            {workout.name}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {exercises}
-                        </p>
-                      </div>
+                            <Check className="w-3.5 h-3.5" />
+                            Delete
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingId(null)}
+                            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <Link
+                            href={`/workout/${workout.id}`}
+                            className="flex items-center gap-4 flex-1 min-w-0"
+                          >
+                            <div className="text-center shrink-0 w-10">
+                              <div className="text-sm font-semibold text-foreground tabular-nums">
+                                {format(new Date(workout.started_at), "d")}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground uppercase">
+                                {format(new Date(workout.started_at), "EEE")}
+                              </div>
+                            </div>
 
-                      <div className="text-right shrink-0 text-xs text-muted-foreground">
-                        {workout.duration_minutes && (
-                          <div>{getDurationString(workout.duration_minutes)}</div>
-                        )}
-                        <div>{formatVolume(totalVolume)}</div>
-                      </div>
-                    </Link>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <span
+                                  className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${getWorkoutTypeBadgeClass(workout.workout_type)}`}
+                                >
+                                  {getWorkoutTypeLabel(workout.workout_type)}
+                                </span>
+                                <span className="text-sm font-medium text-foreground truncate">
+                                  {workout.name}
+                                </span>
+                              </div>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {exercises}
+                              </p>
+                            </div>
+
+                            <div className="text-right shrink-0 text-xs text-muted-foreground">
+                              {workout.duration_minutes && (
+                                <div>{getDurationString(workout.duration_minutes)}</div>
+                              )}
+                              <div>{formatVolume(totalVolume)}</div>
+                            </div>
+                          </Link>
+
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingId(workout.id)}
+                            className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+                            title="Delete workout"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   );
                 })}
               </div>

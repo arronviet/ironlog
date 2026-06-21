@@ -155,18 +155,27 @@ export async function getWorkoutById(id: string) {
   return data;
 }
 
-export async function deleteWorkout(id: string) {
+export async function deleteWorkout(id: string, redirectTo?: string) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Unauthorized");
 
-  await supabase.from("workouts").delete().eq("id", id).eq("user_id", user.id);
+  const { error } = await supabase
+    .from("workouts")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  if (error) throw error;
 
   revalidatePath("/dashboard");
   revalidatePath("/history");
-  redirect("/dashboard");
+  revalidatePath("/calendar");
+  revalidatePath("/stats");
+
+  if (redirectTo) redirect(redirectTo);
 }
 
 export async function getExerciseHistory(exerciseName: string, limit = 12) {
@@ -515,4 +524,105 @@ export async function addExerciseSet(
   revalidatePath("/history");
   revalidatePath("/calendar");
   revalidatePath("/stats");
+}
+
+// ============================================================
+// PERSONAL RECORDS (1RM tracking)
+// A PR is only written when the user explicitly confirms it.
+// The UI computes the suggestion client-side from estimated_1rm;
+// these actions handle reading the current PR and persisting a
+// confirmed one.
+// ============================================================
+
+export async function getPersonalRecord(exerciseName: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data } = await supabase
+    .from("personal_records")
+    .select("*")
+    .eq("user_id", user.id)
+    .ilike("exercise_name", exerciseName)
+    .maybeSingle();
+
+  return data;
+}
+
+export async function getAllPersonalRecords() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data } = await supabase
+    .from("personal_records")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("estimated_1rm", { ascending: false });
+
+  return data ?? [];
+}
+
+export async function confirmPersonalRecord(params: {
+  exerciseName: string;
+  setId: string;
+  workoutId: string;
+  weightKg: number;
+  reps: number;
+  achievedAt: string;
+}) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  if (
+    !Number.isFinite(params.weightKg) ||
+    params.weightKg <= 0 ||
+    !Number.isInteger(params.reps) ||
+    params.reps <= 0
+  ) {
+    throw new Error("Invalid weight or reps");
+  }
+
+  const e1rm = estimate1RM(params.weightKg, params.reps);
+
+  // Only overwrite if this actually beats the existing PR (or none exists).
+  // Prevents a stale client from downgrading a record via a race condition.
+  const { data: existing } = await supabase
+    .from("personal_records")
+    .select("estimated_1rm")
+    .eq("user_id", user.id)
+    .ilike("exercise_name", params.exerciseName)
+    .maybeSingle();
+
+  if (existing && existing.estimated_1rm >= e1rm) {
+    return { updated: false, reason: "Existing PR is equal or higher" };
+  }
+
+  const { error } = await supabase.from("personal_records").upsert(
+    {
+      user_id: user.id,
+      exercise_name: params.exerciseName,
+      set_id: params.setId,
+      workout_id: params.workoutId,
+      weight_kg: params.weightKg,
+      reps: params.reps,
+      estimated_1rm: e1rm,
+      achieved_at: params.achievedAt,
+    },
+    { onConflict: "user_id,exercise_name" }
+  );
+
+  if (error) throw error;
+
+  revalidatePath("/stats");
+  revalidatePath(`/workout/${params.workoutId}`);
+
+  return { updated: true };
 }

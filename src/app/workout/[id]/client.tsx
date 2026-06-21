@@ -16,17 +16,19 @@ import {
   updateExerciseSet,
   deleteExerciseSet,
   addExerciseSet,
+  confirmPersonalRecord,
 } from "@/lib/actions/workouts";
 import { useWorkoutStore } from "@/lib/store/workout";
-import { ArrowLeft, Zap, Pencil, Trash2, Check, X, Plus } from "lucide-react";
-import type { ProgressComparison } from "@/types";
+import { ArrowLeft, Zap, Pencil, Trash2, Check, X, Plus, Trophy } from "lucide-react";
+import type { ProgressComparison, PersonalRecord } from "@/types";
 
 interface Props {
   workout: any;
   progressByExercise: Record<string, ProgressComparison | null>;
+  prByExercise: Record<string, PersonalRecord | null>;
 }
 
-export function WorkoutDetail({ workout, progressByExercise }: Props) {
+export function WorkoutDetail({ workout, progressByExercise, prByExercise }: Props) {
   const totalVolume = workout.exercises?.reduce(
     (acc: number, ex: any) =>
       acc +
@@ -114,6 +116,8 @@ export function WorkoutDetail({ workout, progressByExercise }: Props) {
               key={exercise.id}
               exercise={exercise}
               progress={progressByExercise[exercise.name] ?? null}
+              currentPR={prByExercise[exercise.name] ?? null}
+              workoutStartedAt={workout.started_at}
             />
           ))}
       </div>
@@ -124,11 +128,17 @@ export function WorkoutDetail({ workout, progressByExercise }: Props) {
 function ExerciseBlock({
   exercise,
   progress,
+  currentPR,
+  workoutStartedAt,
 }: {
   exercise: any;
   progress: ProgressComparison | null;
+  currentPR: PersonalRecord | null;
+  workoutStartedAt: string;
 }) {
   const [isPending, startTransition] = useTransition();
+  const [prPending, setPrPending] = useState(false);
+  const [dismissedPrSetIds, setDismissedPrSetIds] = useState<Set<string>>(new Set());
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ weight: string; reps: string; rpe: string }>({
     weight: "",
@@ -153,6 +163,57 @@ function ExerciseBlock({
   );
   const e1rm = bestSet ? estimate1RM(bestSet.weight_kg, bestSet.reps) : 0;
   const totalReps = sets.reduce((acc: number, s: any) => acc + s.reps, 0);
+
+  // Find the single set in this exercise that beats the current confirmed
+  // PR the most — that's the one we suggest. If no PR exists yet, the
+  // heaviest e1RM set becomes the suggestion (first-ever PR for this lift).
+  const prThreshold = currentPR?.estimated_1rm ?? 0;
+  const candidateSet = sets.reduce((best: any, s: any) => {
+    const sE1rm = estimate1RM(s.weight_kg, s.reps);
+    if (sE1rm <= prThreshold) return best;
+    if (!best) return { ...s, _e1rm: sE1rm };
+    return sE1rm > best._e1rm ? { ...s, _e1rm: sE1rm } : best;
+  }, null);
+
+  const showPrBanner =
+    candidateSet &&
+    candidateSet._e1rm > prThreshold &&
+    !dismissedPrSetIds.has(candidateSet.id) &&
+    currentPR?.set_id !== candidateSet.id;
+
+  const confirmPr = () => {
+    if (!candidateSet) return;
+    setPrPending(true);
+    startTransition(async () => {
+      try {
+        const result = await confirmPersonalRecord({
+          exerciseName: exercise.name,
+          setId: candidateSet.id,
+          workoutId: exercise.workout_id,
+          weightKg: candidateSet.weight_kg,
+          reps: candidateSet.reps,
+          achievedAt: workoutStartedAt,
+        });
+        if (result.updated) {
+          addToast({
+            title: `🏆 New PR — ${exercise.name}`,
+            description: `${candidateSet.weight_kg}kg × ${candidateSet.reps} (${candidateSet._e1rm}kg e1RM)`,
+            variant: "success",
+          });
+        }
+        setDismissedPrSetIds((prev) => new Set(prev).add(candidateSet.id));
+      } catch {
+        addToast({ title: "Failed to save PR", variant: "destructive" });
+      } finally {
+        setPrPending(false);
+      }
+    });
+  };
+
+  const dismissPr = () => {
+    if (!candidateSet) return;
+    setDismissedPrSetIds((prev) => new Set(prev).add(candidateSet.id));
+  };
 
   const startEdit = (set: any) => {
     setError(null);
@@ -229,7 +290,18 @@ function ExerciseBlock({
     <div className="bg-card border border-border rounded-lg overflow-hidden">
       {/* Exercise header */}
       <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-foreground">{exercise.name}</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-foreground">{exercise.name}</h3>
+          {currentPR && (
+            <span
+              className="flex items-center gap-1 text-[11px] text-yellow-400 bg-yellow-500/10 px-1.5 py-0.5 rounded"
+              title={`PR: ${currentPR.weight_kg}kg × ${currentPR.reps}`}
+            >
+              <Trophy className="w-3 h-3" />
+              {currentPR.weight_kg}kg PR
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
           <span>{totalReps} reps</span>
           <span>{formatVolume(volume)}</span>
@@ -271,6 +343,43 @@ function ExerciseBlock({
               Last: {progress.previous.weight}kg × {progress.previous.reps}
             </span>
           )}
+        </div>
+      )}
+
+      {/* New PR suggestion banner */}
+      {showPrBanner && candidateSet && (
+        <div className="px-4 py-3 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-between gap-3 animate-in">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Trophy className="w-4 h-4 text-yellow-400 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">
+                New 1RM detected
+              </p>
+              <p className="text-xs text-muted-foreground tabular-nums">
+                {candidateSet.weight_kg}kg × {candidateSet.reps} ·{" "}
+                {candidateSet._e1rm}kg e1RM
+                {currentPR && ` (was ${currentPR.weight_kg}kg)`}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={confirmPr}
+              disabled={prPending}
+              className="flex items-center gap-1.5 bg-yellow-500 text-yellow-950 text-xs font-medium px-3 py-1.5 rounded-md hover:bg-yellow-400 disabled:opacity-50 transition-colors"
+            >
+              <Check className="w-3.5 h-3.5" />
+              Confirm PR
+            </button>
+            <button
+              type="button"
+              onClick={dismissPr}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -357,6 +466,9 @@ function ExerciseBlock({
                   </span>
                   <span className="text-muted-foreground">×</span>
                   <span className="text-foreground tabular-nums">{set.reps}</span>
+                  {currentPR?.set_id === set.id && (
+                    <Trophy className="w-3 h-3 text-yellow-400 shrink-0" />
+                  )}
                   {set.rpe && (
                     <span className="text-xs text-muted-foreground">RPE {set.rpe}</span>
                   )}
@@ -472,4 +584,3 @@ function ExerciseBlock({
     </div>
   );
 }
- 
