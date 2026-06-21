@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import type { WorkoutFormData } from "@/types";
+import type { WorkoutFormData, ProgressComparison, PersonalRecord } from "@/types";
 import { estimate1RM, calculateVolume } from "@/lib/utils";
 
 export async function createWorkout(data: WorkoutFormData) {
@@ -124,6 +124,34 @@ export async function getWorkouts(limit = 20) {
         *,
         exercise_sets (*)
       )
+    `)
+    .eq("user_id", user.id)
+    .order("started_at", { ascending: false })
+    .limit(limit);
+
+  return data ?? [];
+}
+
+// Lightweight variant for views that only need workout-level metadata
+// (calendar dots, type badges, exercise counts) — skips the nested
+// exercise_sets join entirely, which is the expensive part of the query
+// once a user has months of history.
+export async function getWorkoutsLight(limit = 100) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data } = await supabase
+    .from("workouts")
+    .select(`
+      id,
+      name,
+      workout_type,
+      started_at,
+      duration_minutes,
+      exercises ( id, name )
     `)
     .eq("user_id", user.id)
     .order("started_at", { ascending: false })
@@ -357,6 +385,128 @@ export async function getProgressComparison(exerciseName: string) {
       : 0,
     trend,
   };
+}
+
+// ============================================================
+// BATCHED versions for the workout detail page — one query
+// instead of N, and a single auth check instead of N. Used
+// whenever multiple exercises need their progress/PR at once.
+// ============================================================
+
+export async function getProgressComparisonBatch(
+  exerciseNames: string[]
+): Promise<Record<string, ProgressComparison | null>> {
+  const result: Record<string, ProgressComparison | null> = {};
+  if (exerciseNames.length === 0) return result;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return result;
+
+  // Fetch every history row for these exercise names in one query,
+  // then group + compare in memory instead of querying per exercise.
+  const { data } = await supabase
+    .from("exercise_history")
+    .select("*")
+    .eq("user_id", user.id)
+    .in("exercise_name", [...new Set(exerciseNames)])
+    .order("performed_at", { ascending: false });
+
+  const byExercise: Record<string, any[]> = {};
+  (data ?? []).forEach((row) => {
+    if (!byExercise[row.exercise_name]) byExercise[row.exercise_name] = [];
+    byExercise[row.exercise_name].push(row);
+  });
+
+  for (const name of exerciseNames) {
+    const rows = byExercise[name];
+    if (!rows || rows.length === 0) {
+      result[name] = null;
+      continue;
+    }
+
+    const current = rows[0];
+    const previous = rows[1] ?? null;
+
+    let trend: "up" | "down" | "same" | "new" = "new";
+    if (previous) {
+      if (
+        current.best_set_weight > previous.best_set_weight ||
+        current.estimated_1rm > previous.estimated_1rm
+      ) {
+        trend = "up";
+      } else if (
+        current.best_set_weight < previous.best_set_weight ||
+        current.estimated_1rm < previous.estimated_1rm
+      ) {
+        trend = "down";
+      } else {
+        trend = "same";
+      }
+    }
+
+    result[name] = {
+      exercise_name: name,
+      current: {
+        weight: current.best_set_weight,
+        reps: current.best_set_reps,
+        volume: current.total_volume,
+        estimated_1rm: current.estimated_1rm,
+      },
+      previous: previous
+        ? {
+            weight: previous.best_set_weight,
+            reps: previous.best_set_reps,
+            volume: previous.total_volume,
+            estimated_1rm: previous.estimated_1rm,
+          }
+        : null,
+      weight_change: previous
+        ? current.best_set_weight - previous.best_set_weight
+        : 0,
+      reps_change: previous
+        ? current.best_set_reps - previous.best_set_reps
+        : 0,
+      volume_change: previous
+        ? current.total_volume - previous.total_volume
+        : 0,
+      trend,
+    };
+  }
+
+  return result;
+}
+
+export async function getPersonalRecordsBatch(
+  exerciseNames: string[]
+): Promise<Record<string, PersonalRecord | null>> {
+  const result: Record<string, PersonalRecord | null> = {};
+  if (exerciseNames.length === 0) return result;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return result;
+
+  const { data } = await supabase
+    .from("personal_records")
+    .select("*")
+    .eq("user_id", user.id)
+    .in("exercise_name", [...new Set(exerciseNames)]);
+
+  const byName: Record<string, PersonalRecord> = {};
+  (data ?? []).forEach((row) => {
+    byName[row.exercise_name] = row;
+  });
+
+  for (const name of exerciseNames) {
+    result[name] = byName[name] ?? null;
+  }
+
+  return result;
 }
 
 // ============================================================

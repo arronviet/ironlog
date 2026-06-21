@@ -1,7 +1,7 @@
 import {
   getWorkoutById,
-  getProgressComparison,
-  getPersonalRecord,
+  getProgressComparisonBatch,
+  getPersonalRecordsBatch,
 } from "@/lib/actions/workouts";
 import { notFound } from "next/navigation";
 import { WorkoutDetail } from "./client";
@@ -18,23 +18,17 @@ export default async function WorkoutPage({
   if (!workout) notFound();
 
   // Fetch progress comparison + current PR for every exercise in this
-  // workout, in parallel, so each one can show its ▲/▼ badge and detect
-  // whether any set just broke the existing personal record.
+  // workout in two batched queries (instead of 2×N), so each exercise
+  // can show its ▲/▼ badge and detect whether any set just broke the
+  // existing personal record — without N round trips to the database.
   const exerciseNames: string[] = (workout.exercises ?? []).map(
     (ex: any) => ex.name
   );
 
-  const [comparisons, records] = await Promise.all([
-    Promise.all(exerciseNames.map((name) => getProgressComparison(name))),
-    Promise.all(exerciseNames.map((name) => getPersonalRecord(name))),
+  const [progressByExercise, prByExercise] = await Promise.all([
+    getProgressComparisonBatch(exerciseNames),
+    getPersonalRecordsBatch(exerciseNames),
   ]);
-
-  const progressByExercise: Record<string, ProgressComparison | null> = {};
-  const prByExercise: Record<string, PersonalRecord | null> = {};
-  exerciseNames.forEach((name, i) => {
-    progressByExercise[name] = comparisons[i] as ProgressComparison | null;
-    prByExercise[name] = records[i] as PersonalRecord | null;
-  });
 
   return (
     <WorkoutDetail
