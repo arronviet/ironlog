@@ -1,0 +1,17 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="120" fill="#09090B"/>
+
+  <!-- Left plates -->
+  <rect x="80" y="180" width="28" height="152" rx="8" fill="#10B981"/>
+  <rect x="118" y="160" width="36" height="192" rx="8" fill="#10B981"/>
+
+  <!-- Bar -->
+  <rect x="154" y="238" width="204" height="36" rx="18" fill="white"/>
+
+  <!-- Right plates -->
+  <rect x="358" y="160" width="36" height="192" rx="8" fill="#10B981"/>
+  <rect x="404" y="180" width="28" height="152" rx="8" fill="#10B981"/>
+
+  <!-- Center grip -->
+  <rect x="228" y="228" width="56" height="56" rx="12" fill="#10B981"/>
+</svg> 
