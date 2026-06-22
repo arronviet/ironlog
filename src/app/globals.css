@@ -139,3 +139,14 @@
     animation: fade-in 0.2s ease-out;
   }
 } 
+.glass-card {
+  background: rgba(24, 24, 27, 0.72);
+
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+
+  border: 1px solid rgba(255,255,255,.05);
+
+  box-shadow:
+      0 0 40px rgba(0,255,255,.03);
+}
