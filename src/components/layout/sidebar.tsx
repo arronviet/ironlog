@@ -28,7 +28,7 @@ const navItems = [
   { href: "/history", label: "History", icon: ClipboardList },
   { href: "/calendar", label: "Calendar", icon: Calendar },
   { href: "/stats", label: "Stats", icon: BarChart2 },
-  { href: "/prs", label: "PRs", icon: Trophy },
+  { href: "/dashboard/prs", label: "PRs", icon: Trophy }, 
 ];
 
 export function Sidebar({ user }: SidebarProps) {
