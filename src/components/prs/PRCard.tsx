@@ -4,7 +4,8 @@
 // File: src/components/prs/PRCard.tsx
 // ============================================================
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
 import type { PRStats } from '@/types/prs'
 import { deleteOfficialPR, removeTrackedExercise } from '@/actions/prs'
 import OfficialPRModal from './OfficialPRModal'
@@ -41,6 +42,42 @@ export default function PRCard({ stats }: PRCardProps) {
 
   const growthPositive = (stats.growthPercent ?? 0) >= 0
 
+  // ── 3D tilt ──────────────────────────────────────────────
+  const cardRef = useRef<HTMLDivElement>(null)
+  const x = useMotionValue(0)
+  const y = useMotionValue(0)
+
+  const springConfig = { stiffness: 150, damping: 20, mass: 0.5 }
+  const rotateX = useSpring(useTransform(y, [-0.5, 0.5], [6, -6]), springConfig)
+  const rotateY = useSpring(useTransform(x, [-0.5, 0.5], [-6, 6]), springConfig)
+  const glareX = useTransform(x, [-0.5, 0.5], ['0%', '100%'])
+  const glareY = useTransform(y, [-0.5, 0.5], ['0%', '100%'])
+  const glareOpacity = useSpring(0, { stiffness: 200, damping: 25 })
+  const scale = useSpring(1, { stiffness: 200, damping: 20 })
+
+  function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    const card = cardRef.current
+    if (!card) return
+    const rect = card.getBoundingClientRect()
+    const px = (e.clientX - rect.left) / rect.width - 0.5
+    const py = (e.clientY - rect.top) / rect.height - 0.5
+    x.set(px)
+    y.set(py)
+    glareOpacity.set(0.08)
+  }
+
+  function handleMouseEnter() {
+    scale.set(1.02)
+    glareOpacity.set(0.06)
+  }
+
+  function handleMouseLeave() {
+    x.set(0)
+    y.set(0)
+    scale.set(1)
+    glareOpacity.set(0)
+  }
+
   async function handleRemoveOfficial() {
     if (!stats.officialPR) return
     setLoading(true)
@@ -56,8 +93,34 @@ export default function PRCard({ stats }: PRCardProps) {
 
   return (
     <>
-      <div className="group relative rounded-2xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm transition-all duration-300 hover:border-white/[0.12] hover:bg-white/[0.05]">
-        {/* Official PR badge */}
+      <motion.div
+        ref={cardRef}
+        onMouseMove={handleMouseMove}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        style={{
+          rotateX,
+          rotateY,
+          scale,
+          transformStyle: 'preserve-3d',
+          transformPerspective: 800,
+        }}
+        className="group relative rounded-2xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm will-change-transform"
+      >
+        {/* Glare overlay */}
+        <motion.div
+          className="pointer-events-none absolute inset-0 rounded-2xl"
+          style={{
+            opacity: glareOpacity,
+            background: useTransform(
+              [glareX, glareY],
+              ([gx, gy]) =>
+                `radial-gradient(circle at ${gx} ${gy}, rgba(255,255,255,0.5), transparent 60%)`
+            ),
+          }}
+        />
+
+        {/* Official PR accent line */}
         {stats.isOfficial && (
           <div className="absolute -top-px left-4 h-px w-16 bg-gradient-to-r from-amber-400/80 to-transparent" />
         )}
@@ -80,7 +143,6 @@ export default function PRCard({ stats }: PRCardProps) {
             </p>
           </div>
 
-          {/* Remove button */}
           <button
             onClick={handleRemoveTracked}
             disabled={loading}
@@ -93,18 +155,14 @@ export default function PRCard({ stats }: PRCardProps) {
           </button>
         </div>
 
-        {/* Main 1RM display */}
+        {/* Main 1RM */}
         <div className="px-5 pb-4">
           <div className="flex items-end gap-3">
             <span className="text-3xl font-bold tracking-tight text-white">
               {fmt1RM(stats.display1RM)}
             </span>
             {stats.growthPercent !== null && (
-              <span
-                className={`mb-1 text-sm font-medium ${
-                  growthPositive ? 'text-emerald-400' : 'text-red-400'
-                }`}
-              >
+              <span className={`mb-1 text-sm font-medium ${growthPositive ? 'text-emerald-400' : 'text-red-400'}`}>
                 {fmtGrowth(stats.growthPercent)}
               </span>
             )}
@@ -136,16 +194,18 @@ export default function PRCard({ stats }: PRCardProps) {
             className="flex w-full items-center justify-between border-t border-white/[0.05] px-5 py-3 text-[11px] text-white/30 transition-colors hover:text-white/50"
           >
             <span>{expanded ? 'Ẩn biểu đồ' : 'Xem tiến bộ'}</span>
-            <svg
-              className={`h-3.5 w-3.5 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+            <motion.svg
+              animate={{ rotate: expanded ? 180 : 0 }}
+              transition={{ duration: 0.2 }}
+              className="h-3.5 w-3.5"
               fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
+            </motion.svg>
           </button>
         )}
 
-        {/* Expanded chart */}
+        {/* Chart */}
         {expanded && stats.history.length > 1 && (
           <div className="border-t border-white/[0.05] px-2 pb-3 pt-2">
             <PRChart history={stats.history} />
@@ -170,7 +230,7 @@ export default function PRCard({ stats }: PRCardProps) {
             </button>
           )}
         </div>
-      </div>
+      </motion.div>
 
       {showOfficialModal && (
         <OfficialPRModal
@@ -191,3 +251,4 @@ function StatCell({ label, value }: { label: string; value: string }) {
     </div>
   )
 }
+ 
