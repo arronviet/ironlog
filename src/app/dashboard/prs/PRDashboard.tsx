@@ -18,7 +18,7 @@ interface PRDashboardProps {
 export default function PRDashboard({ initialStats, trackedNames }: PRDashboardProps) {
   const [showAddModal, setShowAddModal] = useState(false)
   const [search, setSearch] = useState('')
-  const [sortBy, setSortBy] = useState<'name' | 'rm' | 'growth'>('rm')
+  const [sortBy, setSortBy] = useState<'name' | 'rm' | 'growth'>('rm') 
 
   const filtered = initialStats
     .filter((s) => s.exerciseName.toLowerCase().includes(search.toLowerCase()))
@@ -35,7 +35,7 @@ export default function PRDashboard({ initialStats, trackedNames }: PRDashboardP
     initialStats.filter((s) => s.growthPercent !== null).length > 0
       ? initialStats
           .filter((s) => s.growthPercent !== null)
-          .reduce((sum, s) => sum + (s.growthPercent ?? 0), 0) /
+          .reduce((sum, s) => sum + (s.growthPercent ?? 0), 0) / 
         initialStats.filter((s) => s.growthPercent !== null).length
       : null
 

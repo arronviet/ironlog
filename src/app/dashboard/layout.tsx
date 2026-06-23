@@ -21,5 +21,5 @@ export default async function AppLayout({
         {children}
       </main>
     </div>
-  );
+  ); 
 }
