@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { cache } from 'react'
+import { computePRStats } from '@/lib/prs-utils'
 import type { PRStats, PRTrackedExercise, PROfficialRecord } from '@/types/prs'
 
 export const getTrackedExercises = cache(async (): Promise<PRTrackedExercise[]> => {
@@ -51,72 +52,6 @@ export const getExerciseHistory = cache(async (exerciseName: string) => {
   return data ?? []
 })
 
-export function computePRStats(
-  exerciseName: string,
-  history: Awaited<ReturnType<typeof getExerciseHistory>>,
-  official: PROfficialRecord | undefined,
-): PRStats {
-  if (history.length === 0) {
-    return {
-      exerciseName,
-      current1RM: null,
-      previous1RM: null,
-      growthPercent: null,
-      prDate: null,
-      maxWeight: null,
-      maxReps: null,
-      maxVolume: null,
-      officialPR: official ?? null,
-      display1RM: official?.one_rm ?? null,
-      isOfficial: !!official,
-      history: [],
-    }
-  }
-
-  const e1rms = history.map(h =>
-    h.estimated_1rm ?? (h.best_set_weight * (1 + (h.best_set_reps ?? 0) / 30)),
-  )
-
-  const sorted = [...e1rms].sort((a, b) => b - a)
-  const max1RM = sorted[0]
-  const prev1RM = sorted[1] ?? null
-
-  const growthPercent =
-    prev1RM != null && prev1RM > 0
-      ? Math.round(((max1RM - prev1RM) / prev1RM) * 100 * 10) / 10
-      : null
-
-  const maxIdx = e1rms.indexOf(max1RM)
-  const prDate = history[maxIdx]?.performed_at?.split('T')[0] ?? null
-
-  const maxWeight = Math.max(...history.map(h => h.best_set_weight ?? 0))
-  const maxReps = Math.max(...history.map(h => h.best_set_reps ?? 0))
-  const maxVolume = Math.max(...history.map(h => h.total_volume ?? 0))
-
-  const display1RM = official?.one_rm ?? Math.round(max1RM * 10) / 10
-
-  return {
-    exerciseName,
-    current1RM: Math.round(max1RM * 10) / 10,
-    previous1RM: prev1RM != null ? Math.round(prev1RM * 10) / 10 : null,
-    growthPercent,
-    prDate,
-    maxWeight,
-    maxReps,
-    maxVolume,
-    officialPR: official ?? null,
-    display1RM,
-    isOfficial: !!official,
-    history: history.map((h, i) => ({
-      date: h.performed_at.split('T')[0],
-      estimated1RM: Math.round(e1rms[i] * 10) / 10,
-      bestSetWeight: h.best_set_weight,
-      bestSetReps: h.best_set_reps,
-      totalVolume: h.total_volume,
-    })),
-  }
-}
-
 export async function getAllPRStats(): Promise<PRStats[]> {
   const [tracked, officials] = await Promise.all([
     getTrackedExercises(),
@@ -146,7 +81,7 @@ export const getAvailableExercises = cache(async (query = ''): Promise<string[]>
 
   const { data, error } = await q
   if (error) return []
-  return (data ?? []).map(d => d.name)
+  return (data ?? []).map((d: { name: string }) => d.name)
 })
 
 export async function addTrackedExercise(exerciseName: string) {
@@ -222,4 +157,4 @@ export async function deleteOfficialPR(exerciseName: string) {
   if (error) return { error: error.message }
   revalidatePath('/dashboard/prs')
   return { success: true }
-}
+} 

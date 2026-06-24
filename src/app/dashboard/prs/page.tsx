@@ -19,3 +19,4 @@ async function PRsContent() {
   const stats = await getAllPRStats()
   return <PRDashboard initialStats={stats} />
 }
+ 
