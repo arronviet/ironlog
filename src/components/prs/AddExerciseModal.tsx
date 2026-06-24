@@ -1,151 +1,177 @@
 'use client'
 
-// ============================================================
-// File: src/components/prs/AddExerciseModal.tsx
-// ============================================================
+import { memo, useCallback, useEffect, useRef, useState, useTransition } from 'react'
+import { motion } from 'framer-motion'
+import { X, Plus, Search, Loader2 } from 'lucide-react'
+import { getAvailableExercises, addTrackedExercise } from '@/actions/prs'
+import { usePRStore } from '@/lib/store/prs'
+import { toast } from '@/hooks/useToast'
 
-import { useState, useTransition } from 'react'
-import { addTrackedExercise, getAvailableExercises } from '@/actions/prs'
-import { POPULAR_EXERCISES } from '@/types/prs'
-
-interface AddExerciseModalProps {
-  trackedNames: string[]   // exercises đang track để không hiện trùng
+interface Props {
   onClose: () => void
 }
 
-export default function AddExerciseModal({ trackedNames, onClose }: AddExerciseModalProps) {
+const AddExerciseModal = memo(function AddExerciseModal({ onClose }: Props) {
   const [query, setQuery] = useState('')
-  const [available, setAvailable] = useState<string[]>([])
-  const [loadedAvailable, setLoadedAvailable] = useState(false)
+  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [isSearching, setIsSearching] = useState(false)
   const [isPending, startTransition] = useTransition()
-  const [error, setError] = useState<string | null>(null)
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const { items } = usePRStore()
+  const tracked = new Set(items.map(i => i.exerciseName))
 
-  // Lazy load available exercises khi modal mở
-  async function loadAvailable() {
-    if (loadedAvailable) return
-    const list = await getAvailableExercises()
-    setAvailable(list)
-    setLoadedAvailable(true)
-  }
+  // Focus input khi modal mở
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
 
-  // Suggestions: popular + available từ history, loại bỏ đã track
-  const trackedSet = new Set(trackedNames.map((n) => n.toLowerCase()))
+  // Debounced search gợi ý
+  const handleQuery = useCallback((val: string) => {
+    setQuery(val)
+    if (debounce.current) clearTimeout(debounce.current)
+    if (!val.trim()) {
+      setSuggestions([])
+      return
+    }
+    debounce.current = setTimeout(async () => {
+      setIsSearching(true)
+      const results = await getAvailableExercises(val)
+      setSuggestions(results)
+      setIsSearching(false)
+    }, 200) // 200ms debounce — nhanh hơn 300ms tiêu chuẩn, ổn với Supabase
+  }, [])
 
-  const allSuggestions = [
-    ...POPULAR_EXERCISES,
-    ...available.filter((e) => !POPULAR_EXERCISES.includes(e as any)),
-  ].filter((e) => !trackedSet.has(e.toLowerCase()))
-
-  const filtered = query
-    ? allSuggestions.filter((e) => e.toLowerCase().includes(query.toLowerCase()))
-    : allSuggestions
-
-  async function handleAdd(name: string) {
-    setError(null)
-    startTransition(async () => {
-      const result = await addTrackedExercise({ exerciseName: name })
-      if (result.success) {
-        onClose()
-      } else {
-        setError(result.error ?? 'Có lỗi xảy ra')
+  const handleAdd = useCallback(
+    async (name: string) => {
+      if (tracked.has(name)) {
+        toast(`${name} đã được theo dõi`, 'info')
+        return
       }
-    })
-  }
+      // Optimistic: thêm empty stats ngay lập tức
+      // Server action + revalidate sẽ cập nhật sau
+      startTransition(async () => {
+        const result = await addTrackedExercise(name)
+        if (result?.error) {
+          toast(`Không thể thêm: ${result.error}`, 'error')
+        } else {
+          toast(`Đã thêm ${name}`, 'success')
+          onClose()
+        }
+      })
+    },
+    [tracked, onClose],
+  )
 
-  function handleCustomAdd() {
-    const trimmed = query.trim()
-    if (!trimmed) return
-    handleAdd(trimmed)
-  }
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+      if (e.key === 'Enter' && query.trim() && suggestions.length === 0) {
+        handleAdd(query.trim())
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [query, suggestions, onClose, handleAdd])
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
+    <>
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.15 }}
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+        onClick={onClose}
+      />
 
       {/* Modal */}
-      <div className="relative w-full max-w-sm rounded-2xl border border-white/[0.08] bg-[#111111] shadow-2xl">
-        {/* Top accent */}
-        <div className="absolute inset-x-0 top-0 h-px rounded-t-2xl bg-gradient-to-r from-transparent via-violet-500/40 to-transparent" />
-
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50
+                   w-full max-w-md bg-[#111] border border-white/[0.08] rounded-2xl
+                   shadow-2xl overflow-hidden"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/[0.05] px-5 py-4">
-          <h2 className="text-sm font-semibold text-white">Theo dõi exercise</h2>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06]">
+          <h2 className="text-sm font-semibold text-white">Theo dõi bài tập mới</h2>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-white/25 transition-colors hover:bg-white/[0.06] hover:text-white/50"
+            className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/[0.06] transition-colors"
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X size={15} />
           </button>
         </div>
 
         {/* Search */}
-        <div className="px-5 pt-4">
-          <div className="flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5">
-            <svg className="h-3.5 w-3.5 shrink-0 text-white/25" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+        <div className="p-4">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
+            {isSearching && (
+              <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 animate-spin" />
+            )}
             <input
-              autoFocus
+              ref={inputRef}
               type="text"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onFocus={loadAvailable}
+              onChange={e => handleQuery(e.target.value)}
               placeholder="Tìm hoặc nhập tên bài tập..."
-              className="w-full bg-transparent text-xs text-white/80 placeholder-white/25 outline-none"
-              onKeyDown={(e) => e.key === 'Enter' && handleCustomAdd()}
+              className="w-full pl-9 pr-9 py-2.5 bg-white/[0.05] border border-white/[0.08]
+                         rounded-xl text-sm text-white placeholder-white/25
+                         focus:outline-none focus:border-white/20 transition-colors"
             />
           </div>
-        </div>
 
-        {/* List */}
-        <div className="max-h-64 overflow-y-auto px-5 py-3">
-          {filtered.length === 0 && query ? (
-            <button
-              onClick={handleCustomAdd}
-              disabled={isPending}
-              className="flex w-full items-center gap-2 rounded-xl border border-dashed border-white/[0.08] px-3 py-3 text-xs text-white/40 transition-colors hover:border-white/[0.15] hover:text-white/60"
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-              Thêm &ldquo;{query}&rdquo;
-            </button>
-          ) : (
-            <div className="space-y-0.5">
-              {filtered.slice(0, 20).map((name) => (
-                <button
-                  key={name}
-                  onClick={() => handleAdd(name)}
-                  disabled={isPending}
-                  className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs text-white/60 transition-colors hover:bg-white/[0.05] hover:text-white/90"
-                >
-                  <span>{name}</span>
-                  <svg className="h-3.5 w-3.5 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
-                </button>
+          {/* Suggestions */}
+          {suggestions.length > 0 && (
+            <ul className="mt-2 space-y-0.5 max-h-56 overflow-y-auto">
+              {suggestions.map(s => (
+                <li key={s}>
+                  <button
+                    onClick={() => handleAdd(s)}
+                    disabled={isPending}
+                    className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-colors
+                      flex items-center justify-between group
+                      ${tracked.has(s)
+                        ? 'text-white/25 cursor-default'
+                        : 'text-white/80 hover:bg-white/[0.06] hover:text-white'
+                      }`}
+                  >
+                    <span>{s}</span>
+                    {tracked.has(s) ? (
+                      <span className="text-xs text-white/20">Đã theo dõi</span>
+                    ) : (
+                      <Plus size={13} className="text-white/20 group-hover:text-white/50 transition-colors" />
+                    )}
+                  </button>
+                </li>
               ))}
-            </div>
+            </ul>
+          )}
+
+          {/* Custom exercise */}
+          {query.trim() && suggestions.length === 0 && !isSearching && (
+            <button
+              onClick={() => handleAdd(query.trim())}
+              disabled={isPending}
+              className="mt-2 w-full flex items-center gap-2 px-4 py-3 rounded-xl
+                         bg-white/[0.05] border border-white/[0.06] hover:border-white/[0.12]
+                         text-sm text-white/70 hover:text-white transition-all disabled:opacity-50"
+            >
+              <Plus size={14} />
+              Thêm "{query.trim()}"
+              <span className="ml-auto text-xs text-white/30">Enter</span>
+            </button>
           )}
         </div>
+      </motion.div>
+    </>
+  )
+})
 
-        {error && (
-          <p className="px-5 pb-3 text-[11px] text-red-400">{error}</p>
-        )}
-
-        <div className="border-t border-white/[0.05] px-5 py-3">
-          <p className="text-[10px] text-white/20">
-            Nhập tên bất kỳ và nhấn Enter để theo dõi exercise tuỳ chỉnh
-          </p>
-        </div>
-      </div>
-    </div>
-  ) 
-}
- 
+export default AddExerciseModal

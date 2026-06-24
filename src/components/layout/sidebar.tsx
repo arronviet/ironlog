@@ -1,129 +1,82 @@
-"use client";
+'use client'
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { signOut } from "@/lib/actions/auth";
-import { cn } from "@/lib/utils";
-import { useWorkoutStore } from "@/lib/store/workout";
-import type { User } from "@supabase/supabase-js";
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard,
-  Plus,
+  History,
   Calendar,
-  BarChart2,
-  ClipboardList,
-  LogOut,
+  BarChart3,
   Dumbbell,
-  Search,
   Trophy,
-} from "lucide-react";
+} from 'lucide-react'
+import { signOut } from '@/lib/actions/auth'
 
-interface SidebarProps {
-  user: User;
-}
+// ─── Next.js <Link> tự động prefetch khi hover → navigate tức thì ─────────────
+// Thêm prefetch={true} explicit cho các route hay dùng
+const NAV_ITEMS = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/dashboard/workout', label: 'Ghi Workout', icon: Dumbbell },
+  { href: '/dashboard/history', label: 'Lịch sử', icon: History },
+  { href: '/dashboard/calendar', label: 'Lịch', icon: Calendar },
+  { href: '/dashboard/stats', label: 'Thống kê', icon: BarChart3 },
+  { href: '/dashboard/prs', label: 'PRs', icon: Trophy },
+]
 
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/workout/new", label: "New workout", icon: Plus },
-  { href: "/history", label: "History", icon: ClipboardList },
-  { href: "/calendar", label: "Calendar", icon: Calendar },
-  { href: "/stats", label: "Stats", icon: BarChart2 },
-  { href: "/dashboard/prs", label: "PRs", icon: Trophy }, 
-];
-
-export function Sidebar({ user }: SidebarProps) {
-  const pathname = usePathname();
-  const setCommandOpen = useWorkoutStore((s) => s.setCommandOpen);
-
-  const displayName =
-    user.user_metadata?.full_name?.split(" ")[0] ??
-    user.email?.split("@")[0] ??
-    "Athlete";
+export function Sidebar() {
+  const pathname = usePathname()
 
   return (
-    <aside className="w-56 border-r border-border flex flex-col h-full shrink-0">
+    <aside className="w-56 shrink-0 flex flex-col h-full bg-white/[0.02] border-r border-white/[0.05]">
       {/* Logo */}
-      <div className="px-4 py-4 border-b border-border">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-primary rounded flex items-center justify-center shrink-0">
-            <Dumbbell className="w-3.5 h-3.5 text-primary-foreground" />
-          </div>
-          <span className="text-sm font-semibold text-foreground">IronLog</span>
-        </div>
-      </div>
-
-      {/* Search trigger */}
-      <div className="px-2 pt-3">
-        <button
-          onClick={() => setCommandOpen(true)}
-          className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors w-full text-left border border-border"
-        >
-          <Search className="w-3.5 h-3.5 shrink-0" />
-          <span className="flex-1">Search</span>
-          <kbd className="text-[10px] border border-border rounded px-1 py-0.5">
-            ⌘K
-          </kbd>
-        </button>
+      <div className="px-5 py-5 border-b border-white/[0.05]">
+        <span className="text-white font-bold text-lg tracking-tight">IronLog</span>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-2 py-4 space-y-0.5">
-        {navItems.map(({ href, label, icon: Icon }) => {
-          const isActive =
-            href === "/dashboard"
-              ? pathname === "/dashboard"
-              : pathname.startsWith(href);
-
+      <nav className="flex-1 px-3 py-4 space-y-0.5">
+        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+          const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
           return (
             <Link
               key={href}
               href={href}
-              className={cn(
-                "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors",
-                isActive
-                  ? "bg-accent text-foreground font-medium"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-              )}
+              prefetch={true} // Preload JS chunk khi hover, không cần chờ khi click
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm
+                         transition-all duration-150 group
+                         ${active
+                           ? 'bg-white/[0.08] text-white'
+                           : 'text-white/50 hover:text-white/80 hover:bg-white/[0.04]'
+                         }`}
             >
-              <Icon className="w-4 h-4 shrink-0" />
+              <Icon
+                size={17}
+                className={active ? 'text-white' : 'text-white/40 group-hover:text-white/60 transition-colors'}
+              />
               {label}
-              {href === "/workout/new" && (
-                <span className="ml-auto bg-primary/20 text-primary text-[10px] px-1.5 py-0.5 rounded font-medium">
-                  Log
+              {href === '/dashboard/prs' && active && (
+                <span className="ml-auto text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-md">
+                  NEW
                 </span>
               )}
             </Link>
-          );
+          )
         })}
       </nav>
 
-      {/* User */}
-      <div className="px-2 pb-4 border-t border-border pt-4">
-        <div className="flex items-center gap-2.5 px-3 py-2 mb-1">
-          <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-            <span className="text-[10px] font-semibold text-primary uppercase">
-              {displayName[0]}
-            </span>
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-foreground truncate">
-              {displayName}
-            </p>
-            <p className="text-[10px] text-muted-foreground truncate">
-              {user.email}
-            </p>
-          </div>
-        </div>
+      {/* Sign out */}
+      <div className="px-3 py-4 border-t border-white/[0.05]">
         <form action={signOut}>
           <button
             type="submit"
-            className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors w-full text-left"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm
+                       text-white/30 hover:text-white/60 hover:bg-white/[0.04]
+                       transition-all duration-150"
           >
-            <LogOut className="w-4 h-4 shrink-0" />
-            Sign out
+            Đăng xuất
           </button>
         </form>
       </div>
     </aside>
-  );
-} 
+  )
+}

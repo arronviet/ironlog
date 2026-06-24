@@ -1,25 +1,27 @@
-import { Sidebar } from "@/components/layout/sidebar";
-import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
+import type { ReactNode } from 'react'
+import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+import { Sidebar } from '@/components/layout/sidebar'
+import { ToastContainer } from '@/components/ToastContainer'
 
-export default async function AppLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+// ─── Dashboard Layout ─────────────────────────────────────────────────────────
+// - Auth guard
+// - Sidebar
+// - ToastContainer (global, mount 1 lần duy nhất)
+export default async function DashboardLayout({ children }: { children: ReactNode }) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user) redirect("/auth/login");
+  if (!user) redirect('/login')
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
-      <Sidebar user={user} />
+    <div className="flex h-screen bg-[#0a0a0a] overflow-hidden">
+      <Sidebar />
       <main className="flex-1 overflow-y-auto">
         {children}
       </main>
+      {/* Toast phải mount ở layout (không ở page) để persist khi navigate */}
+      <ToastContainer />
     </div>
-  ); 
+  )
 }
