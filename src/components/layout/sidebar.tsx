@@ -16,10 +16,10 @@ import { signOut } from '@/lib/actions/auth'
 // Thêm prefetch={true} explicit cho các route hay dùng
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/dashboard/workout', label: 'Ghi Workout', icon: Dumbbell },
-  { href: '/dashboard/history', label: 'Lịch sử', icon: History },
-  { href: '/dashboard/calendar', label: 'Lịch', icon: Calendar },
-  { href: '/dashboard/stats', label: 'Thống kê', icon: BarChart3 },
+  { href: '/workout/new', label: 'Ghi Workout', icon: Dumbbell },
+  { href: '/history', label: 'Lịch sử', icon: History },
+  { href: '/calendar', label: 'Lịch', icon: Calendar },
+  { href: '/stats', label: 'Thống kê', icon: BarChart3 },
   { href: '/dashboard/prs', label: 'PRs', icon: Trophy },
 ]
 
@@ -36,10 +36,10 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
+          const active = pathname === href || (href !== '/dashboard' && href !== '/workout/new' && pathname.startsWith(href))
           return (
             <Link
-              key={href}
+              key={href} 
               href={href}
               prefetch={true} // Preload JS chunk khi hover, không cần chờ khi click
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm
