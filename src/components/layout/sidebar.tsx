@@ -16,12 +16,12 @@ import { signOut } from '@/lib/actions/auth'
 // Thêm prefetch={true} explicit cho các route hay dùng
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/workout/new', label: 'Ghi Workout', icon: Dumbbell },
-  { href: '/history', label: 'Lịch sử', icon: History },
-  { href: '/calendar', label: 'Lịch', icon: Calendar },
-  { href: '/stats', label: 'Thống kê', icon: BarChart3 },
+  { href: '/workout/new', label: 'Log Workout', icon: Dumbbell },
+  { href: '/history', label: 'History', icon: History },
+  { href: '/calendar', label: 'Calendar', icon: Calendar },
+  { href: '/stats', label: 'Stats', icon: BarChart3 },
   { href: '/dashboard/prs', label: 'PRs', icon: Trophy },
-]
+] 
 
 export function Sidebar() {
   const pathname = usePathname()
